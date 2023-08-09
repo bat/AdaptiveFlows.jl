@@ -1,0 +1,8 @@
+name = "AdaptiveFlows"
+uuid = "24d2106d-e7e1-4641-aa0a-4a5934943aa1"
+version = "0.1.0"
+
+[deps]
+
+[compat]
+julia = "1.6"
