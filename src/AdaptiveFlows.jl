@@ -7,6 +7,23 @@ Adaptive normalizing flows.
 """
 module AdaptiveFlows
 
-include("adaptive_flow.jl")
+using ArgCheck
+using ArraysOfArrays
+using ChangesOfVariables
+using FunctionChains
+using Functors
+using HeterogeneousComputing
+using InverseFunctions
+using Lux
+using MonotonicSplines
+using Optimisers 
+using Random
+using StatsFuns
+using ValueShapes
+using Zygote
 
+include("adaptive_flow.jl")
+include("optimize_flow.jl")
+include("rqspline_coupling.jl")
+include("utils.jl")
 end # module
