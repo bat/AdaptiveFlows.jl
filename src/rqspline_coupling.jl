@@ -1,5 +1,12 @@
 # This file is a part of AdaptiveFlows.jl, licensed under the MIT License (MIT).
 
+"""
+    RQSplineCouplingModule <: AbstractFlowModule
+
+A concrete subtype of `AbstractFlowModule`[@ref], using rational quadratic spline functions for the 
+transformation of input components, and a coupling approach to introducing correlation between the 
+dimensions of the flow's output.
+"""
 struct RQSplineCouplingModule <: AbstractFlowModule
     flow_module::Function
 end
@@ -14,14 +21,31 @@ end
 """
     RQSplineCouplingModule(n_dims::Integer, 
                            block_target_elements::Union{Vector{Vector{I}}, Vector{UnitRange{I}}} where I <: Integer, 
-                           K::Union{Integer, Vector{Integer}} = 10
+                           K::Union{Integer, Vector{Integer}} = 10,
+                           compute_unit::AbstractComputeUnit = CPUnit()
         )
+
 Construct an instance of `RQSplineCouplingModule` for a `ǹ_dims` -dimensíonal input. Use `block_target_elements` 
 to specify which block in the module transforms which components of the input. Use `K` to specify the desired 
-number of spline segments used for the rational quadratic spline functions (defaults to 10). 
+number of spline segments used for the rational quadratic spline functions (defaults to 10). If desired, use 
+`compute_unit` to specify the flow to be initiated on a different compute device, using the API of 
+"HeterogeneousComputing.jl"(https://oschulz.github.io/HeterogeneousComputing.jl/stable/).
 
 Note: This constructor does not ensure each element of the input is transformed by a block. If desired, this 
 must be ensured in `block_target_elements`.
+
+Alternative call signature:
+
+    RQSplineCouplingModule(n_dims::Integer, 
+                           block_target_elements::Integer = 1, 
+                           K::Union{Integer, Vector{Integer}} = 10,
+                           compute_unit::AbstractComputeUnit = CPUnit()
+
+    )
+
+In this method, one may only input the number of dimensions `n_dims` of the target distribution. The default rational 
+quadratic coupling flow module that is constructed this way, consists of `n_dims` blocks of `RQSplineCouplingBlock`s, 
+each of which transforms one component of the input and uses 10 spline segments for its spline functions. 
 """
 function RQSplineCouplingModule(n_dims::Integer, 
                                 block_target_elements::Union{Vector{Vector{I}}, Vector{UnitRange{I}}} where I <: Integer, 
@@ -45,14 +69,16 @@ end
 
 function RQSplineCouplingModule(n_dims::Integer, 
                                 block_target_elements::Integer = 1, 
-                                K::Union{Integer, Vector{Integer}} = 10
+                                K::Union{Integer, Vector{Integer}} = 10,
+                                compute_unit::AbstractComputeUnit = CPUnit()
+
     )
 
     n_blocks = ceil(Integer, n_dims / block_target_elements)
     vectorized_bte = [UnitRange(i + 1, i + block_target_elements) for i in range(start = 0, stop = (n_blocks - 2) * block_target_elements, step = block_target_elements)]
     push!(vectorized_bte, UnitRange((n_blocks - 1) * block_target_elements + 1, n_dims))
 
-    RQSplineCouplingModule(n_dims, vectorized_bte, K)
+    RQSplineCouplingModule(n_dims, vectorized_bte, K, compute_unit)
 end
 
 function ChangesOfVariables.with_logabsdet_jacobian(
@@ -69,7 +95,12 @@ function InverseFunctions.inverse(f::RQSplineCouplingModule)
     return RQSplineCouplingModule(InverseFunctions.inverse(f.flow_module).fs)
 end
 
+"""
+    RQSplineCouplingBlock <: AbstractFlowBlock
 
+A concrete subtype of `AbstractFlowBlock`[@ref], using rational quadratic spline functions for the transformation 
+of input components, and a coupling approach to introducing correlation between the dimensions of the flow's output.
+"""
 struct RQSplineCouplingBlock <: AbstractFlowBlock
     mask::Vector{Bool}
     nn::Chain
@@ -80,7 +111,13 @@ end
 export RQSplineCouplingBlock
 @functor RQSplineCouplingBlock
 
-function RQSplineCouplingBlock(mask::Vector{Bool}, nn::Chain, compute_unit::AbstractComputeUnit)
+"""
+    RQSplineCouplingBlock(mask::Vector{Bool}, nn::Chain, compute_unit::AbstractComputeUnit=CPUnit())
+
+Construct and instance of `RQSplineCouplingBlock`, while initializing the parameters and the state of `nn` on the 
+compute device specified in `compute_unit`. (Defaults to CPU)
+"""
+function RQSplineCouplingBlock(mask::Vector{Bool}, nn::Chain, compute_unit::AbstractComputeUnit=CPUnit())
     rng = Random.default_rng()
     Random.seed!(rng, 0)
 
@@ -103,13 +140,20 @@ end
 (f::RQSplineCouplingBlock)(vs::AbstractValueShape) = vs
 
 function InverseFunctions.inverse(f::RQSplineCouplingBlock)
-    return InverseRQSplineCouplingBlock(f.nn, f.mask)
+    return InverseRQSplineCouplingBlock(f.mask, f.nn, f.nn_parameters, f.nn_state)
 end
 
+"""
+    InverseRQSplineCouplingBlock <: AbstractFlowBlock
 
+A concrete subtype of `AbstractFlowBlock`[@ref], using *inverse* rational quadratic spline functions for the transformation 
+of input components, and a coupling approach to introducing correlation between the dimensions of the flow's output.
+"""
 struct InverseRQSplineCouplingBlock <: Function
     mask::Vector{Bool}
     nn::Chain
+    nn_parameters::NamedTuple
+    nn_state::NamedTuple
 end
 
 export InverseRQSplineCouplingBlock
@@ -126,10 +170,16 @@ end
 (f::InverseRQSplineCouplingBlock)(vs::AbstractValueShape) = vs
 
 function InverseFunctions.inverse(f::InverseRQSplineCouplingBlock)
-    return RQSplineCouplingBlock(f.nn, f.mask)
+    return RQSplineCouplingBlock(f.mask, f.nn, f.nn_parameters, f.nn_state)
 end
 
+"""
+    apply_rqs_coupling_flow(flow::Union{RQSplineCouplingBlock, InverseRQSplineCouplingBlock}, x::Any)
 
+Apply the flow block `flow` to the input `x`, and compute the logarithm of the absolute value of the jacobian of this transformation. 
+Returns a tuple with the transformed output in the first component and a row matrix of the corresponding log values of the abs of 
+the jacobians in the second component.
+"""
 function apply_rqs_coupling_flow(flow::Union{RQSplineCouplingBlock, InverseRQSplineCouplingBlock}, x::Any) # make x typestable
 
     rq_spline = flow isa RQSplineCouplingBlock ? RQSpline : InvRQSpline
