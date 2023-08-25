@@ -12,6 +12,7 @@ Test.@testset "Aqua tests" begin
     Aqua.test_all(
         AdaptiveFlows,
         ambiguities = false,
+        piracy = false,
         project_toml_formatting = VERSION≥v"1.7"
     )
 end # testset

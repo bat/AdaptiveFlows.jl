@@ -20,7 +20,7 @@ end
 
 """
     RQSplineCouplingModule(n_dims::Integer, 
-                           block_target_elements::Union{Vector{Vector{I}}, Vector{UnitRange{I}}} where I <: Integer, 
+                           block_target_elements::Vector, 
                            K::Union{Integer, Vector{Integer}} = 10,
                            compute_unit::AbstractComputeUnit = CPUnit()
         )
@@ -48,7 +48,7 @@ quadratic coupling flow module that is constructed this way, consists of `n_dims
 each of which transforms one component of the input and uses 10 spline segments for its spline functions. 
 """
 function RQSplineCouplingModule(n_dims::Integer, 
-                                block_target_elements::Union{Vector{Vector{I}}, Vector{UnitRange{I}}} where I <: Integer, 
+                                block_target_elements::Vector, 
                                 K::Union{Integer, Vector{Integer}} = 10,
                                 compute_unit::AbstractComputeUnit = CPUnit()
     )
@@ -60,7 +60,7 @@ function RQSplineCouplingModule(n_dims::Integer,
 
     for i in 1:n_blocks
         transformation_mask = fill(false, n_dims)
-        transformation_mask[block_target_elements[i]] .= true
+        block_target_elements[i] isa Integer ? transformation_mask[block_target_elements[i]] = true : transformation_mask[block_target_elements[i]] .= true
         neural_net = get_neural_net(n_dims - sum(transformation_mask), n_out_neural_net[i])
         blocks[i] = RQSplineCouplingBlock(transformation_mask, neural_net, compute_unit)
     end
@@ -128,7 +128,6 @@ function RQSplineCouplingBlock(mask::Vector{Bool}, nn::Chain, compute_unit::Abst
     return RQSplineCouplingBlock(mask, nn, nn_parameters, nn_state)
 end
 
-
 function ChangesOfVariables.with_logabsdet_jacobian(
     f::RQSplineCouplingBlock,
     x::Any
@@ -159,6 +158,23 @@ end
 export InverseRQSplineCouplingBlock
 @functor InverseRQSplineCouplingBlock
 
+"""
+    InverseRQSplineCouplingBlock(mask::Vector{Bool}, nn::Chain, compute_unit::AbstractComputeUnit=CPUnit())
+
+Construct and instance of `InverseRQSplineCouplingBlock`, while initializing the parameters and the state of `nn` on the 
+compute device specified in `compute_unit`. (Defaults to CPU)
+"""
+function InverseRQSplineCouplingBlock(mask::Vector{Bool}, nn::Chain, compute_unit::AbstractComputeUnit=CPUnit())
+    rng = Random.default_rng()
+    Random.seed!(rng, 0)
+
+    lux_compute_unit = compute_unit isa CPUnit ? cpu_device() : gpu_device()
+
+    nn_parameters, nn_state = Lux.setup(rng, nn) .|> lux_compute_unit
+
+    return InverseRQSplineCouplingBlock(mask, nn, nn_parameters, nn_state)
+end
+
 function ChangesOfVariables.with_logabsdet_jacobian(
     f::InverseRQSplineCouplingBlock,
     x::Any
@@ -172,6 +188,7 @@ end
 function InverseFunctions.inverse(f::InverseRQSplineCouplingBlock)
     return RQSplineCouplingBlock(f.mask, f.nn, f.nn_parameters, f.nn_state)
 end
+
 
 """
     apply_rqs_coupling_flow(flow::Union{RQSplineCouplingBlock, InverseRQSplineCouplingBlock}, x::Any)
