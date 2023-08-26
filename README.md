@@ -12,3 +12,19 @@ This package aims to provide a toolkit for constructing modular and high perform
 
 * [Documentation for stable version](https://bat.github.io/AdaptiveFlows.jl/stable)
 * [Documentation for development version](https://bat.github.io/AdaptiveFlows.jl/dev)
+
+## Installation
+
+To install `AdaptiveFlows.jl`, start Julia and run 
+
+```Julia
+julia> using Pkg
+julia> pkg.add("AdaptiveFlows.jl")
+```
+and 
+```Julia
+julia> using AdaptiveFlows
+```
+to use the functions the package provides.
+
+## Usage
