@@ -22,7 +22,7 @@ using StatsFuns
 using ValueShapes
 using Zygote
 
-include("adaptive_flow.jl")
+include("adaptive_flows.jl")
 include("optimize_flow.jl")
 include("rqspline_coupling.jl")
 include("utils.jl")

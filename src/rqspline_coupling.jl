@@ -75,7 +75,7 @@ function RQSplineCouplingModule(n_dims::Integer,
     )
 
     n_blocks = ceil(Integer, n_dims / block_target_elements)
-    vectorized_bte = [UnitRange(i + 1, i + block_target_elements) for i in range(start = 0, stop = (n_blocks - 2) * block_target_elements, step = block_target_elements)]
+    vectorized_bte = [UnitRange(i + 1, i + block_target_elements) for i in 0:block_target_elements:((n_blocks - 2) * block_target_elements) ]
     push!(vectorized_bte, UnitRange((n_blocks - 1) * block_target_elements + 1, n_dims))
 
     RQSplineCouplingModule(n_dims, vectorized_bte, K, compute_unit)

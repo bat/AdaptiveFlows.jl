@@ -98,7 +98,7 @@ function optimize_flow_sequentially(smpls::VectorOfSimilarVectors{<:Real},
     )
 
     optimized_modules = Vector{AbstractFlow}(undef, length(initial_flow.flow.fs))
-    module_optimizer_states = Vector{NamedTuple}(undef, length(initial_flow.flow.fs))
+    module_optimizer_states = Vector(undef, length(initial_flow.flow.fs))
     module_negll_hists = Vector{Vector}(undef, length(initial_flow.flow.fs))
 
     for (i,flow_module) in enumerate(initial_flow.flow.fs)
@@ -118,7 +118,8 @@ function optimize_flow_sequentially(smpls::VectorOfSimilarVectors{<:Real},
                                     nepochs::Integer = 100,
                                     shuffle_samples::Bool = false
     )
-
+    @argcheck !(initial_flow isa AbstractFlowBlock) throw DomainError("The input flow is an individual flow block, please use `optimize_flow()`[@ref] to optimize flow blocks.")
+    
     optimized_blocks = Vector{AbstractFlow}(undef, length(initial_flow.flow_module.fs))
     block_optimizer_states = Vector{NamedTuple}(undef, length(initial_flow.flow_module.fs))
     block_negll_hists = Vector{Vector}(undef, length(initial_flow.flow_module.fs))
