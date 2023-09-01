@@ -47,6 +47,16 @@ function InverseFunctions.inverse(f::CompositeFlow)
     return CompositeFlow(InverseFunctions.inverse(f.flow).fs)
 end
 
+function prepend_flow_module(f::CompositeFlow, new_module::F) where F<:AbstractFlow
+    return CompositeFlow([new_module, f.flow.fs...])
+end
+export prepend_flow_module
+
+function append_flow_module(f::CompositeFlow, new_module::F) where F<:AbstractFlow
+    return CompositeFlow([f.flow.fs..., new_module])
+end
+export append_flow_module
+
 """
     AbstractFlowModule <: AbstractFlow
 
