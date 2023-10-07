@@ -11,6 +11,7 @@ using AffineMaps
 using ArgCheck
 using ArraysOfArrays
 using ChangesOfVariables
+# using Flux # only for debugging
 using FunctionChains
 using Functors
 using HeterogeneousComputing
@@ -28,6 +29,6 @@ using Zygote
 include("adaptive_flows.jl")
 include("optimize_flow.jl")
 include("rqspline_coupling.jl")
-include("scale_shift.jl")
+#include("scale_shift.jl")
 include("utils.jl")
 end # module

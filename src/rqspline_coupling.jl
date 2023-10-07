@@ -8,7 +8,7 @@ transformation of input components, and a coupling approach to introducing corre
 dimensions of the flow's output.
 """
 struct RQSplineCouplingModule <: AbstractFlowModule
-    flow_module::Function
+    flow::Function
 end
 
 export RQSplineCouplingModule
@@ -25,7 +25,7 @@ end
                            compute_unit::AbstractComputeUnit = CPUnit()
         )
 
-Construct an instance of `RQSplineCouplingModule` for a `ǹ_dims` -dimensíonal input. Use `block_target_elements` 
+Construct an instance of `RQSplineCouplingModule` for a `n_dims` -dimensíonal input. Use `block_target_elements` 
 to specify which block in the module transforms which components of the input. Use `K` to specify the desired 
 number of spline segments used for the rational quadratic spline functions (defaults to 10). If desired, use 
 `compute_unit` to specify the flow to be initiated on a different compute device, using the API of 
@@ -48,7 +48,7 @@ quadratic coupling flow module that is constructed this way, consists of `n_dims
 each of which transforms one component of the input and uses 10 spline segments for its spline functions. 
 """
 function RQSplineCouplingModule(n_dims::Integer, 
-                                block_target_elements::Vector, 
+                                block_target_elements::Vector; 
                                 K::Union{Integer, Vector{Integer}} = 10,
                                 compute_unit::AbstractComputeUnit = CPUnit()
     )
@@ -68,7 +68,7 @@ function RQSplineCouplingModule(n_dims::Integer,
 end
 
 function RQSplineCouplingModule(n_dims::Integer, 
-                                block_target_elements::Integer = 1, 
+                                block_target_elements::Integer = 1;
                                 K::Union{Integer, Vector{Integer}} = 10,
                                 compute_unit::AbstractComputeUnit = CPUnit()
 
@@ -78,28 +78,29 @@ function RQSplineCouplingModule(n_dims::Integer,
     vectorized_bte = [UnitRange(i + 1, i + block_target_elements) for i in 0:block_target_elements:((n_blocks - 2) * block_target_elements) ]
     push!(vectorized_bte, UnitRange((n_blocks - 1) * block_target_elements + 1, n_dims))
 
-    RQSplineCouplingModule(n_dims, vectorized_bte, K, compute_unit)
+    RQSplineCouplingModule(n_dims, vectorized_bte, K = K, compute_unit = compute_unit)
 end
 
 function ChangesOfVariables.with_logabsdet_jacobian(
     f::RQSplineCouplingModule,
     x::Any
 )
-    with_logabsdet_jacobian(f.flow_module, x)
+    with_logabsdet_jacobian(f.flow, x)
 end
 
-(f::RQSplineCouplingModule)(x::Any) = f.flow_module(x)
+(f::RQSplineCouplingModule)(x::Any) = f.flow(x)
 (f::RQSplineCouplingModule)(vs::AbstractValueShape) = vs
 
 function InverseFunctions.inverse(f::RQSplineCouplingModule)
-    return RQSplineCouplingModule(InverseFunctions.inverse(f.flow_module).fs)
+    return RQSplineCouplingModule(InverseFunctions.inverse(f.flow).fs)
 end
 
 """
     RQSplineCouplingBlock <: AbstractFlowBlock
 
-A concrete subtype of `AbstractFlowBlock`[@ref], using rational quadratic spline functions for the transformation 
-of input components, and a coupling approach to introducing correlation between the dimensions of the flow's output.
+An object holding the neural net and the input mask to transform samples using using rational quadratic 
+spline functions for the transformation of the input components of a normalizing flow, and a coupling approach to introducing 
+correlation between the dimensions of the flow's output.
 """
 struct RQSplineCouplingBlock <: AbstractFlowBlock
     mask::Vector{Bool}
@@ -145,8 +146,9 @@ end
 """
     InverseRQSplineCouplingBlock <: AbstractFlowBlock
 
-A concrete subtype of `AbstractFlowBlock`[@ref], using *inverse* rational quadratic spline functions for the transformation 
-of input components, and a coupling approach to introducing correlation between the dimensions of the flow's output.
+An object holding the neural net and the input mask to transform samples using *inverse* rational quadratic spline 
+functions for the transformation of the input components of a normalizing flow with a coupling approach to introducing 
+correlation between the dimensions of the flow's output.
 """
 struct InverseRQSplineCouplingBlock <: Function
     mask::Vector{Bool}
@@ -179,7 +181,7 @@ function ChangesOfVariables.with_logabsdet_jacobian(
     f::InverseRQSplineCouplingBlock,
     x::Any
 )
-    return apply_rqs_coupling_flow(f, x)
+    apply_rqs_coupling_flow(f, x)
 end
 
 (f::InverseRQSplineCouplingBlock)(x::Any) = apply_rqs_coupling_flow(f, x)[1]
