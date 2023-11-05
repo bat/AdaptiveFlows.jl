@@ -81,18 +81,11 @@ function RQSplineCouplingModule(n_dims::Integer,
     RQSplineCouplingModule(n_dims, vectorized_bte, K = K, compute_unit = compute_unit)
 end
 
-function ChangesOfVariables.with_logabsdet_jacobian(
-    f::RQSplineCouplingModule,
-    x::Any
-)
-    with_logabsdet_jacobian(f.flow, x)
-end
-
-(f::RQSplineCouplingModule)(x::Any) = f.flow(x)
-(f::RQSplineCouplingModule)(vs::AbstractValueShape) = vs
-
 function InverseFunctions.inverse(f::RQSplineCouplingModule)
     return RQSplineCouplingModule(InverseFunctions.inverse(f.flow).fs)
+end
+
+abstract type AbstractRQSplineCouplingBlock <: AbstractFlowBlock
 end
 
 """
@@ -102,7 +95,7 @@ An object holding the neural net and the input mask to transform samples using u
 spline functions for the transformation of the input components of a normalizing flow, and a coupling approach to introducing 
 correlation between the dimensions of the flow's output.
 """
-struct RQSplineCouplingBlock <: AbstractFlowBlock
+struct RQSplineCouplingBlock <: AbstractRQSplineCouplingBlock
     mask::Vector{Bool}
     nn::Chain
     nn_parameters::NamedTuple
@@ -129,19 +122,10 @@ function RQSplineCouplingBlock(mask::Vector{Bool}, nn::Chain, compute_unit::Abst
     return RQSplineCouplingBlock(mask, nn, nn_parameters, nn_state)
 end
 
-function ChangesOfVariables.with_logabsdet_jacobian(
-    f::RQSplineCouplingBlock,
-    x::Any
-)
-    apply_rqs_coupling_flow(f, x)
-end
-
-(f::RQSplineCouplingBlock)(x::Any) = apply_rqs_coupling_flow(f, x)[1]
-(f::RQSplineCouplingBlock)(vs::AbstractValueShape) = vs
-
 function InverseFunctions.inverse(f::RQSplineCouplingBlock)
     return InverseRQSplineCouplingBlock(f.mask, f.nn, f.nn_parameters, f.nn_state)
 end
+
 
 """
     InverseRQSplineCouplingBlock <: AbstractFlowBlock
@@ -150,7 +134,7 @@ An object holding the neural net and the input mask to transform samples using *
 functions for the transformation of the input components of a normalizing flow with a coupling approach to introducing 
 correlation between the dimensions of the flow's output.
 """
-struct InverseRQSplineCouplingBlock <: Function
+struct InverseRQSplineCouplingBlock <: AbstractRQSplineCouplingBlock
     mask::Vector{Bool}
     nn::Chain
     nn_parameters::NamedTuple
@@ -177,19 +161,29 @@ function InverseRQSplineCouplingBlock(mask::Vector{Bool}, nn::Chain, compute_uni
     return InverseRQSplineCouplingBlock(mask, nn, nn_parameters, nn_state)
 end
 
+function InverseFunctions.inverse(f::InverseRQSplineCouplingBlock)
+    return RQSplineCouplingBlock(f.mask, f.nn, f.nn_parameters, f.nn_state)
+end
+
+
 function ChangesOfVariables.with_logabsdet_jacobian(
-    f::InverseRQSplineCouplingBlock,
-    x::Any
+    f::AbstractRQSplineCouplingBlock,
+    x::Matrix
 )
     apply_rqs_coupling_flow(f, x)
 end
 
-(f::InverseRQSplineCouplingBlock)(x::Any) = apply_rqs_coupling_flow(f, x)[1]
-(f::InverseRQSplineCouplingBlock)(vs::AbstractValueShape) = vs
-
-function InverseFunctions.inverse(f::InverseRQSplineCouplingBlock)
-    return RQSplineCouplingBlock(f.mask, f.nn, f.nn_parameters, f.nn_state)
+function ChangesOfVariables.with_logabsdet_jacobian(
+    f::AbstractRQSplineCouplingBlock,
+    x::Vector
+)
+    y, ladj = apply_rqs_coupling_flow(f, reshape(x, :, 1))
+    return vec(y), ladj[1]
 end
+
+(f::AbstractRQSplineCouplingBlock)(x::Matrix) = apply_rqs_coupling_flow(f, x)[1]
+(f::AbstractRQSplineCouplingBlock)(x::Vector) = vec(apply_rqs_coupling_flow(f, reshape(x , :, 1))[1])
+(f::AbstractRQSplineCouplingBlock)(vs::AbstractValueShape) = vs
 
 
 """
@@ -199,7 +193,7 @@ Apply the flow block `flow` to the input `x`, and compute the logarithm of the a
 Returns a tuple with the transformed output in the first component and a row matrix of the corresponding log values of the abs of 
 the jacobians in the second component.
 """
-function apply_rqs_coupling_flow(flow::Union{RQSplineCouplingBlock, InverseRQSplineCouplingBlock}, x::Any) # make x typestable
+function apply_rqs_coupling_flow(flow::Union{RQSplineCouplingBlock, InverseRQSplineCouplingBlock}, x::AbstractArray)
 
     rq_spline = flow isa RQSplineCouplingBlock ? RQSpline : InvRQSpline
     n_dims_to_transform = sum(flow.mask)

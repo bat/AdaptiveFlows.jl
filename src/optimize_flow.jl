@@ -87,7 +87,7 @@ function optimize_flow(samples::AbstractArray,
     
     for i in 1:nepochs
         for batch in batches
-            loss, d_flow = mvnormal_negll_flow_grad(flow, flatview(batch))
+            loss, d_flow = mvnormal_negll_flow_grad(flow, Matrix(flatview(batch)))
             state, flow = Optimisers.update(state, flow, d_flow)
             push!(loss_hist, loss)
         end

@@ -37,15 +37,25 @@ function CompositeFlow(n_dims::Integer, modules::Vector{F}) where F <: Function
     build_flow(ndims, modules)
 end    
 
+
 function ChangesOfVariables.with_logabsdet_jacobian(
-    f::CompositeFlow,
-    x::Any
-)
+    f::F, 
+    x::Matrix
+) where F <: AbstractFlow
     with_logabsdet_jacobian(f.flow, x)
 end
 
-(f::CompositeFlow)(x::Any) = f.flow(x)
-(f::CompositeFlow)(vs::AbstractValueShape) = vs
+function ChangesOfVariables.with_logabsdet_jacobian(
+    f::F,
+    x::Vector
+) where F <: AbstractFlow
+    y, ladj = with_logabsdet_jacobian(f.flow, reshape(x,:,1))
+    return vec(y), ladj[1]
+end
+
+(f::AbstractFlow)(x::Matrix) = f.flow(x)
+(f::AbstractFlow)(x::Vector) = vec(f.flow(reshape(x, :, 1)))
+(f::AbstractFlow)(vs::AbstractValueShape) = vs
 
 function InverseFunctions.inverse(f::CompositeFlow)
     return CompositeFlow(InverseFunctions.inverse(f.flow).fs)
@@ -91,15 +101,15 @@ end
 export FlowModule
 @functor FlowModule
 
-function ChangesOfVariables.with_logabsdet_jacobian(
-    f::FlowModule,
-    x::Any
-)
-    with_logabsdet_jacobian(f.flow, x)
-end
+# function ChangesOfVariables.with_logabsdet_jacobian(
+#     f::FlowModule,
+#     x::Any
+# )
+#     with_logabsdet_jacobian(f.flow, x)
+# end
 
-(f::FlowModule)(x::Any) = f.flow(x)
-(f::FlowModule)(vs::AbstractValueShape) = vs
+# (f::FlowModule)(x::Any) = f.flow(x)
+# (f::FlowModule)(vs::AbstractValueShape) = vs
 
 function InverseFunctions.inverse(f::FlowModule)
     return FlowModule(InverseFunctions.inverse(f.flow), f.trainable)
@@ -172,6 +182,7 @@ function build_flow(target_samples::AbstractArray, modules::Vector = [InvMulAdd,
     CompositeFlow(flow_modules)
 end
 export build_flow
+
 
 function _is_trainable(flow)
 
