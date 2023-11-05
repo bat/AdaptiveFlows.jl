@@ -86,7 +86,8 @@ export append_flow_module
 """
     AbstractFlowModule <: AbstractFlow
 
-A flow module is a normalizing flow that transforms each of the input components. 
+A flow module is a normalizing flow that transforms each of the input's components. 
+It differs from a flow block, in that flow blocks may only partially transform an input.
 A flow module may consist of a scaling and shifting operation of the input samples, or be a composition of 
 several flow blocks of a specific type (see `AbstractFlowBlock`). 
 """
@@ -100,16 +101,6 @@ end
 
 export FlowModule
 @functor FlowModule
-
-# function ChangesOfVariables.with_logabsdet_jacobian(
-#     f::FlowModule,
-#     x::Any
-# )
-#     with_logabsdet_jacobian(f.flow, x)
-# end
-
-# (f::FlowModule)(x::Any) = f.flow(x)
-# (f::FlowModule)(vs::AbstractValueShape) = vs
 
 function InverseFunctions.inverse(f::FlowModule)
     return FlowModule(InverseFunctions.inverse(f.flow), f.trainable)

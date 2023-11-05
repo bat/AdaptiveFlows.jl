@@ -3,7 +3,7 @@
 """
     RQSplineCouplingModule <: AbstractFlowModule
 
-A concrete subtype of `AbstractFlowModule`[@ref], using rational quadratic spline functions for the 
+A flow module using rational quadratic spline functions for the 
 transformation of input components, and a coupling approach to introducing correlation between the 
 dimensions of the flow's output.
 """

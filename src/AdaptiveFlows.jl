@@ -3,7 +3,7 @@
 """
     AdaptiveFlows
 
-Adaptive normalizing flows.
+A package for constructing modular normalizing flows.
 """
 module AdaptiveFlows
 
