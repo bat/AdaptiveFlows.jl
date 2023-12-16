@@ -18,7 +18,8 @@ using InverseFunctions
 using LinearAlgebra
 using Lux
 using MonotonicSplines
-using Optimisers 
+using Optimisers
+using ProgressBars
 using Random
 using Statistics
 using StatsFuns

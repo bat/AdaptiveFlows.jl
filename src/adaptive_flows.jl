@@ -16,6 +16,8 @@ the input.
 abstract type AbstractFlow <: Function
 end
 
+export AbstractFlow
+
 """
     CompositeFlow <: AbstractFlow
 
@@ -94,6 +96,8 @@ several flow blocks of a specific type (see `AbstractFlowBlock`).
 abstract type AbstractFlowModule <: AbstractFlow
 end
 
+export AbstractFlowModule
+
 struct FlowModule <: AbstractFlowModule
     flow::Function
     trainable::Bool
@@ -116,14 +120,41 @@ several flow blocks must be composed to a flow module (see `AbstractFlowModule`)
 abstract type AbstractFlowBlock <: AbstractFlowModule
 end
 
+export AbstractFlowBlock
+
 """
     build_flow(n_dims::Integer, modules::Vector, compute_unit::AbstractComputeUnit = CPUnit())
 
-Construct a `CompositeFlow` to transfrom samples from a `n_dims` -dimensional target distribution, 
-with the component modules in `modules`. The flow is initialized to target objects stored on `compute_unit` (defaults to CPU)
+Construct a `CompositeFlow` to transform samples from a `n_dims`-dimensional target distribution, 
+with the component modules in `modules`. The flow is initialized to target objects stored on `compute_unit` (defaults to CPU).
 The first entry in `modules` is the function that is applied first to inputs of the resulting `CompositeFlow`.
 
-The entries in `modules` may be actual functions or the names of the objects desired. 
+# Arguments
+- `n_dims::Integer`: The number of dimensions of the target distribution. This is used to initialize the flow modules.
+- `modules::Vector`: A vector of functions or names of objects that will be used as the component modules of the `CompositeFlow`. 
+  Each module is a normalizing flow that transforms the input data. The modules are applied in the order they appear in the vector.
+- `compute_unit::AbstractComputeUnit`: (optional) The computing device where the target objects are stored. Defaults to CPU.
+
+# Details
+The entries in `modules` may be actual functions or the names of the objects desired. If a module is a function, it is used as is. 
+If a module is a name of an object, it is initialized with `n_dims` and `compute_unit` before being used.
+
+The function first checks if any of the specified modules are uninitialized and depend on the target input. If so, it throws a `DomainError`.
+
+Next, it initializes the flow modules. If a module is a function, it is used as is. If a module is a name of an object, it is initialized with `n_dims` and `compute_unit`.
+
+Then, it checks if each module is an `AbstractFlow`. If a module is not an `AbstractFlow`, it is wrapped in a `FlowModule`.
+
+Finally, it returns a `CompositeFlow` that consists of the initialized flow modules.
+
+# Returns
+- A `CompositeFlow` that consists of the initialized flow modules.
+
+# Examples
+```julia
+flow = build_flow(3, [module1, module2, module3])
+
+This will create a CompositeFlow that transforms 3-dimensional data using `module1`, `module2`, and `module3` in that order. 
 """
 function build_flow(n_dims::Integer, modules::Vector, compute_unit::AbstractComputeUnit = CPUnit())
     @argcheck !any((broadcast(x -> x <: AffineMaps.AbstractAffineMap))) throw(DomainError(modules, "One or more of the specified modules are uninitailized and depend on the target input. Please use `build_flow(target_samples, modules)` to initialize modules depending on the target_samples."))
