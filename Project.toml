@@ -23,7 +23,7 @@ ValueShapes = "136a8f8c-c49b-4edb-8b98-f3d64d48be8f"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [compat]
-AffineMaps = "0.1, 0.2"
+AffineMaps = "0.3"
 ArgCheck = "2"
 ArraysOfArrays = "0.5.1, 0.6"
 ChangesOfVariables = "0.1.3"

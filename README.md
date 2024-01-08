@@ -1,5 +1,9 @@
 # AdaptiveFlows.jl
 
+<p align="center">
+    <img width="300px" src="docs/src/assets/logo.svg"/>
+</p>
+
 [![Documentation for stable version](https://img.shields.io/badge/docs-stable-blue.svg)](https://bat.github.io/AdaptiveFlows.jl/stable)
 [![Documentation for development version](https://img.shields.io/badge/docs-dev-blue.svg)](https://bat.github.io/AdaptiveFlows.jl/dev)
 [![License](http://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat)](LICENSE.md)

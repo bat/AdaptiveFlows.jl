@@ -1,17 +1,18 @@
 # This file is a part of AdaptiveFlows.jl, licensed under the MIT License (MIT).
 
-"""
+""" 
     AbstractFlow <: Function
 
-Abstract supertype for all functions that are used as "Normalizing Flows". 
-A Normalizing Flow is an invertible and diferentiable function from 
-a `D`-dimensional space to a `D`-dimensional space. 
-A flow may be applied to a batch of samples from a target distribution. 
-Depending on the selected computing device and the specific flow, the input samples may be transformed in parallel.
+Supertype for functions used as "normalizing flows" for transforming complex probability
+distributions into simpler ones.
 
-Here, a flow returns a tuple of the transformed output of the flow, and a row matrix, with the `i`-th entry holding 
-the logarithm of the absolute value of the determinant of the jacobian of the transformation of the `i`-th sample in 
-the input.
+A normalizing flow is an invertible, differentiable function mapping a `D`-dimensional 
+space onto another `D`-dimensional space. 
+
+When applied to a matrix of samples from a probability distribution, a normalizing flow
+returns a tuple: the transformed output and a row matrix with the `1,i`-th element 
+holding the logarithm of the absolute value of the determinant of the Jacobian of the 
+transformation, applied to the `ì`-th sample in the input. 
 """
 abstract type AbstractFlow <: Function
 end
@@ -21,8 +22,12 @@ export AbstractFlow
 """
     CompositeFlow <: AbstractFlow
 
-A `CompositeFlow` is a composition of several flow modules (see `AbstractFlowModule`[@ref]), 
-individual normalizing flows, that each transform all components of the input data.
+Represents a composition of multiple normalizing flows, each transforming all components
+of the input data.
+
+# Fields:
+
+flow<:Function: A function representing the composed normalizing flow. 
 """
 struct CompositeFlow <: AbstractFlow
     flow::Function
@@ -88,10 +93,11 @@ export append_flow_module
 """
     AbstractFlowModule <: AbstractFlow
 
-A flow module is a normalizing flow that transforms each of the input's components. 
+A flow module is a normalizing flow that transforms each of a multidimensional input's 
+dimensions. 
 It differs from a flow block, in that flow blocks may only partially transform an input.
-A flow module may consist of a scaling and shifting operation of the input samples, or be a composition of 
-several flow blocks of a specific type (see `AbstractFlowBlock`). 
+A flow module may consist of a scaling and shifting operation of the input samples, or be
+a composition of several flow blocks of a specific type (see `AbstractFlowBlock`). 
 """
 abstract type AbstractFlowModule <: AbstractFlow
 end
@@ -113,9 +119,10 @@ end
 """
     AbstractFlowBlock <: AbstractFlowModule
 
-A flow block is a normalizing flow that may only 
-transform a fraction of the components of the input samples. To transform all components of the input, 
-several flow blocks must be composed to a flow module (see `AbstractFlowModule`).
+A flow block is a normalizing flow that can only transform a fraction of the dimensions of
+a multidimensional input. 
+To transform all components of the input, several flow blocks must be composed to a flow
+module (see `AbstractFlowModule`).
 """
 abstract type AbstractFlowBlock <: AbstractFlowModule
 end
@@ -123,38 +130,30 @@ end
 export AbstractFlowBlock
 
 """
-    build_flow(n_dims::Integer, modules::Vector, compute_unit::AbstractComputeUnit = CPUnit())
+    build_flow(n_dims::Integer, 
+               modules::Vector, 
+               compute_unit::AbstractComputeUnit = CPUnit())
 
-Construct a `CompositeFlow` to transform samples from a `n_dims`-dimensional target distribution, 
-with the component modules in `modules`. The flow is initialized to target objects stored on `compute_unit` (defaults to CPU).
-The first entry in `modules` is the function that is applied first to inputs of the resulting `CompositeFlow`.
+Compose a number of normalizing flows into a `CompositeFlow` to transform samples from a
+`n_dims`-dimensional target distribution. 
+The resulting flow is initialized to target objects stored on `compute_unit` 
+(defaults to CPU).
 
 # Arguments
-- `n_dims::Integer`: The number of dimensions of the target distribution. This is used to initialize the flow modules.
-- `modules::Vector`: A vector of functions or names of objects that will be used as the component modules of the `CompositeFlow`. 
-  Each module is a normalizing flow that transforms the input data. The modules are applied in the order they appear in the vector.
-- `compute_unit::AbstractComputeUnit`: (optional) The computing device where the target objects are stored. Defaults to CPU.
-
-# Details
-The entries in `modules` may be actual functions or the names of the objects desired. If a module is a function, it is used as is. 
-If a module is a name of an object, it is initialized with `n_dims` and `compute_unit` before being used.
-
-The function first checks if any of the specified modules are uninitialized and depend on the target input. If so, it throws a `DomainError`.
-
-Next, it initializes the flow modules. If a module is a function, it is used as is. If a module is a name of an object, it is initialized with `n_dims` and `compute_unit`.
-
-Then, it checks if each module is an `AbstractFlow`. If a module is not an `AbstractFlow`, it is wrapped in a `FlowModule`.
-
-Finally, it returns a `CompositeFlow` that consists of the initialized flow modules.
-
-# Returns
-- A `CompositeFlow` that consists of the initialized flow modules.
+- `n_dims::Integer`: The number of dimensions of the target distribution.
+- `modules::Vector`: A vector of functions or types that will be used as the component
+                     modules of the `CompositeFlow`. The modules are applied in the order
+                     they appear in in `modules`.
+- `compute_unit::AbstractComputeUnit`: (optional) The computing device where the target
+                     objects are stored. Defaults to CPU.
 
 # Examples
+#TODO
 ```julia
 flow = build_flow(3, [module1, module2, module3])
 
-This will create a CompositeFlow that transforms 3-dimensional data using `module1`, `module2`, and `module3` in that order. 
+This will create a CompositeFlow that transforms 3-dimensional data using `module1`, 
+`module2`, and `module3` in that order. 
 """
 function build_flow(n_dims::Integer, modules::Vector, compute_unit::AbstractComputeUnit = CPUnit())
     @argcheck !any((broadcast(x -> x <: AffineMaps.AbstractAffineMap))) throw(DomainError(modules, "One or more of the specified modules are uninitailized and depend on the target input. Please use `build_flow(target_samples, modules)` to initialize modules depending on the target_samples."))
@@ -166,6 +165,29 @@ function build_flow(n_dims::Integer, modules::Vector, compute_unit::AbstractComp
     return CompositeFlow(flow_modules)
 end
 
+"""
+    build_flow(target_samples::AbstractArray, 
+               modules::Vector = [InvMulAdd, RQSplineCouplingModule],
+               compute_unit::AbstractComputeUnit = CPUnit())
+
+Construct a `CompositeFlow` suited for transforming samples similar to `target_samples`.
+The resulting flow is initialized to target objects stored on `compute_unit` 
+(defaults to CPU).
+
+# Arguments
+- `target_samples::AbstractArray`: A set of samples from the probability distribution the
+                                   flow is intended to target. Has to be in the shape 
+                                   `n_dims x n_samples`, where `n_dims` is the number of 
+                                   dimensions of the target distribution.
+- `modules::Vector`: (optional) A vector of functions or types that will be used as the 
+                     component modules of the `CompositeFlow`. The modules are applied 
+                     in the order they appear in in `modules`.
+- `compute_unit::AbstractComputeUnit`: (optional) The computing device where the target
+                     objects are stored. Defaults to CPU.
+
+# Examples
+#TODO
+"""
 function build_flow(target_samples::AbstractArray, modules::Vector = [InvMulAdd, RQSplineCouplingModule], compute_unit::AbstractComputeUnit = CPUnit())
     # n_dims = target_samples isa Matrix ? size(target_samples, 1) : (target_samples isa ArrayOfSimilarArrays ? size(target_samples.data, 1) : throw(DomainError(target_samples, "Please input the target samples either as a `Matrix` or an `ArrayOfSimilarArrays`")))
 
