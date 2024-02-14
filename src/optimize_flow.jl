@@ -28,7 +28,7 @@ function KLDiv_flow_loss(flow::F, x::AbstractMatrix{<:Real}, logd_orig::Abstract
 end
 
 function KLDiv_flow(flow::F, x::AbstractMatrix{<:Real}, logd_orig::AbstractVector, logpdfs::Tuple{Function, Function}) where F<:AbstractFlow
-    KLDiv, back = Zygote.pullback(KLDiv_flow, flow, x, logd_orig, logpdfs)
+    KLDiv, back = Zygote.pullback(KLDiv_flow_loss, flow, x, logd_orig, logpdfs)
     d_flow = back(one(eltype(x)))[1]
     return KLDiv, d_flow
 end
