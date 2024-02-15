@@ -12,7 +12,7 @@ function negll_flow_loss(flow::F, x::AbstractMatrix{<:Real}, logd_orig::Abstract
 end
 
 function negll_flow(flow::F, x::AbstractMatrix{<:Real}, logd_orig::AbstractVector, logpdf::Tuple{Function, Function}) where F<:AbstractFlow
-    negll, back = Zygote.pullback(negll_flow, flow, x, logd_orig, logpdf[2])
+    negll, back = Zygote.pullback(negll_flow_loss, flow, x, logd_orig, logpdf[2])
     d_flow = back(one(eltype(x)))[1]
     return negll, d_flow
 end
