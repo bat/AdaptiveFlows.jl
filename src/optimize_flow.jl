@@ -23,7 +23,7 @@ function KLDiv_flow_loss(flow::F, x::AbstractMatrix{<:Real}, logd_orig::Abstract
     flow_corr = fchain(flow,logpdf.f)
     #logpdf_y = logpdfs[2].logdensity
     y, ladj = with_logabsdet_jacobian(flow_corr, x)
-    KLDiv = sum(exp.(logd_orig - vec(ladj)) .* (logd_orig - vec(ladj) - logpdf(y))) / nsamples
+    KLDiv = sum(exp.(logd_orig - vec(ladj)) .* (logd_orig - vec(ladj) - logpdf.logdensity(y))) / nsamples
     return KLDiv
 end
 
