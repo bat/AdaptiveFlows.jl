@@ -3,7 +3,7 @@
 std_normal_logpdf(x::Real) = -(abs2(x) + log2π)/2
 std_normal_logpdf(x::AbstractArray) = vec(sum(std_normal_logpdf.(flatview(x)), dims = 1))
 
-function negll_flow_loss(flow::F, x::AbstractMatrix{<:Real}, logd_orig::AbstractVector, logpdf::Function) where F<:AbstractFlow
+function negll_flow_loss(flow::F, x::AbstractMatrix{<:Real}, logpdf::Function) where F<:AbstractFlow
     nsamples = size(x, 2) 
     flow_corr = fchain(flow,logpdf.f)
     y, ladj = with_logabsdet_jacobian(flow_corr, x)
@@ -12,7 +12,7 @@ function negll_flow_loss(flow::F, x::AbstractMatrix{<:Real}, logd_orig::Abstract
 end
 
 function negll_flow(flow::F, x::AbstractMatrix{<:Real}, logd_orig::AbstractVector, logpdf::Tuple{Function, Function}) where F<:AbstractFlow
-    negll, back = Zygote.pullback(negll_flow, flow, x, logd_orig, logpdf[2])
+    negll, back = Zygote.pullback(negll_flow_loss, flow, x, logpdf[2])
     d_flow = back(one(eltype(x)))[1]
     return negll, d_flow
 end
@@ -20,7 +20,7 @@ export negll_flow
 
 function KLDiv_flow_loss(flow::F, x::AbstractMatrix{<:Real}, logd_orig::AbstractVector, logpdfs::Tuple{Function, Function}) where F<:AbstractFlow
     nsamples = size(x, 2) 
-    flow_corr = fchain(flow,logpdfs[2].f)
+    flow_corr = fchain(flow, logpdfs[2].f)
     logpdf_y = logpdfs[2].logdensity
     y, ladj = with_logabsdet_jacobian(flow_corr, x)
     KLDiv = sum(exp.(logd_orig - vec(ladj)) .* (logd_orig - vec(ladj) - logpdf_y(y))) / nsamples
@@ -38,7 +38,7 @@ function optimize_flow(samples::Union{Matrix, Tuple{Matrix, Matrix}},
     initial_flow::F where F<:AbstractFlow, 
     optimizer;
     sequential::Bool = true,
-    loss::Function = negll_flow_grad,
+    loss::Function = negll_flow,
     logpdf::Union{Function, Tuple{Function, Function}} = std_normal_logpdf,
     nbatches::Integer = 10, 
     nepochs::Integer = 100,
@@ -75,12 +75,17 @@ function optimize_flow(samples::Union{AbstractArray, Tuple{AbstractArray, Abstra
     
     n_dims = _get_n_dims(samples) 
     logd_orig = samples isa Tuple ? logpdf[1](samples[1]) : logpdf[1](samples)
-    pushfwd_logpdf = logpdf[2] == std_normal_logpdf ? (PushForwardLogDensity(first(initial_flow.flow.fs), logpdf[1]), PushForwardLogDensity(FlowModule(InvMulAdd(I(n_dims), zeros(n_dims)), false), logpdf[2])) : (PushForwardLogDensity(first(initial_flow.flow.fs), logpdf[1]), PushForwardLogDensity(last(initial_flow.flow.fs), logpdf[2]))
+
+    if !(initial_flow isa AbstractFlowBlock)
+        pushfwd_logpdf = logpdf[2] == std_normal_logpdf ? (PushForwardLogDensity(first(initial_flow.flow.fs), logpdf[1]), PushForwardLogDensity(FlowModule(InvMulAdd(I(n_dims), zeros(n_dims)), false), logpdf[2])) : (PushForwardLogDensity(first(initial_flow.flow.fs), logpdf[1]), PushForwardLogDensity(last(initial_flow.flow.fs), logpdf[2]))
+    else
+        pushfwd_logpdf = (PushForwardLogDensity(InvMulAdd(I(n_dims), zeros(n_dims)), logpdf[1]), PushForwardLogDensity(InvMulAdd(I(n_dims), zeros(n_dims)), logpdf[2]))
+    end
 
     if sequential 
         flow, state, loss_hist = _train_flow_sequentially(samples, initial_flow, optimizer, nepochs, nbatches, loss, pushfwd_logpdf, logd_orig, shuffle_samples)
     else 
-        flow, state, loss_hist = _train_flow(samples, initial_flow, optimizer, nepochs, nbatches, loss, pushfwd_logpd, logd_orig, shuffle_samples)
+        flow, state, loss_hist = _train_flow(samples, initial_flow, optimizer, nepochs, nbatches, loss, pushfwd_logpdf, logd_orig, shuffle_samples)
     end
 
     return (result = flow, optimizer_state = state, loss_hist = vcat(loss_history, loss_hist))
