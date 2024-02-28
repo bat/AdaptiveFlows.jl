@@ -112,7 +112,8 @@ Construct and instance of `RQSplineCouplingBlock`, while initializing the parame
 compute device specified in `compute_unit`. (Defaults to CPU)
 """
 function RQSplineCouplingBlock(mask::Vector{Bool}, nn::Chain, compute_unit::AbstractComputeUnit=CPUnit())
-    rng = Random.default_rng()
+    # Set fixed rng to be consistent across julia versions, alternative: rng = Random.default_rng()
+    rng = TaskLocalRNG()
     Random.seed!(rng, 0)
 
     lux_compute_unit = compute_unit isa CPUnit ? cpu_device() : gpu_device()
