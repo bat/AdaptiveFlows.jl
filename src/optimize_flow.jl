@@ -3,32 +3,57 @@
 std_normal_logpdf(x::Real) = -(abs2(x) + log2π)/2
 std_normal_logpdf(x::AbstractArray) = vec(sum(std_normal_logpdf.(flatview(x)), dims = 1))
 
-function negll_flow_loss(flow::F, x::AbstractMatrix{<:Real}, logpdf::Function) where F<:AbstractFlow
+function negll_flow_loss(flow::F, x::AbstractMatrix{<:Real}, cum_ladj::AbstractVector, logpdf::Function) where F<:AbstractFlow
     nsamples = size(x, 2) 
     flow_corr = fchain(flow,logpdf.f)
-    y, ladj = with_logabsdet_jacobian(flow_corr, x)
+    y, ladj_tmp = with_logabsdet_jacobian(flow_corr, x)
+    ladj = cum_ladj + vec(ladj_tmp)
     ll = (sum(logpdf.logdensity(y)) + sum(ladj)) / nsamples
     return -ll
 end
 
-function negll_flow(flow::F, x::AbstractMatrix{<:Real}, logd_orig::AbstractVector, logpdf::Tuple{Function, Function}) where F<:AbstractFlow
-    negll, back = Zygote.pullback(negll_flow_loss, flow, x, logpdf[2])
+function negll_flow(flow::F, x::AbstractMatrix{<:Real}, logd_orig::AbstractVector, cum_ladj::AbstractVector, logpdf::Tuple{Function, Function}) where F<:AbstractFlow
+    negll, back = Zygote.pullback(negll_flow_loss, flow, x, cum_ladj, logpdf[2])
     d_flow = back(one(eltype(x)))[1]
     return negll, d_flow
 end
 export negll_flow
 
-function KLDiv_flow_loss(flow::F, x::AbstractMatrix{<:Real}, logd_orig::AbstractVector, logpdfs::Tuple{Function, Function}) where F<:AbstractFlow
+function KLDiv_flow_loss(flow::F, x::AbstractMatrix{<:Real}, logd_orig::AbstractVector, cum_ladj::AbstractVector, logpdfs::Tuple{Function, Function}) where F<:AbstractFlow
     nsamples = size(x, 2) 
     flow_corr = fchain(flow, logpdfs[2].f)
     logpdf_y = logpdfs[2].logdensity
-    y, ladj = with_logabsdet_jacobian(flow_corr, x)
-    KLDiv = sum(exp.(logd_orig - vec(ladj)) .* (logd_orig - vec(ladj) - logpdf_y(y))) / nsamples
+    y, ladj_tmp = with_logabsdet_jacobian(flow_corr, x)
+    ladj = cum_ladj + vec(ladj_tmp)
+
+
+    q = logd_orig - vec(ladj)
+    p = logpdf_y(y)
+
+
+    # KLDiv = (sum(exp.(q) .* (q - p)) + sum(exp.(p) .* (p - q))) / nsamples # composite
+    
+    KLDiv = sum(exp.(logd_orig - vec(ladj)) .* (logd_orig - vec(ladj) - logpdf_y(y))) / nsamples #(1) 
+
+    #KLDiv = sum(exp.(logpdf_y(y) + vec(ladj)) .* (logpdf_y(y) + vec(ladj) - logd_orig)) / nsamples #(MALA PAPER)             
+
+
+
+    # KLDiv = sum(exp.(logpdf_y(y) + vec(ladj)) .* (logpdf_y(y) + vec(ladj) - logd_orig)) / nsamples
+
+    # KLDiv = sum(exp.(logd_orig) .* (logd_orig - vec(ladj) - logpdf_y(y))) / nsamples #(to tight) 
+
+
+    #KLDiv = sum(exp.(logd_orig - vec(ladj)) .* (logd_orig - vec(ladj) - logpdf_y(y))) / nsamples   #(1)
+    # KLDiv = sum(exp.(logpdf_y(y) + vec(ladj)) .* (logpdf_y(y) + vec(ladj) - logd_orig)) / nsamples #(2)/ (3) with logpdfs[2] = target
+    # KLDiv = sum(exp.(logpdf_y(y) + vec(ladj)) .* (vec(ladj) - logd_orig)) / nsamples 
+    # KLDiv = sum(exp.(logpdf_y(y) + vec(ladj)) .* (logpdf_y(y) + vec(ladj) - logd_orig - logpdf_y(y))) / nsamples 
+    # KLDiv = sum(exp.(logd_orig - vec(ladj)) .* (logd_orig - vec(ladj) - logpdf_y(y) - logpdfs[1].logdensity(x))) / nsamples 
     return KLDiv
 end
 
-function KLDiv_flow(flow::F, x::AbstractMatrix{<:Real}, logd_orig::AbstractVector, logpdfs::Tuple{Function, Function}) where F<:AbstractFlow
-    KLDiv, back = Zygote.pullback(KLDiv_flow_loss, flow, x, logd_orig, logpdfs)
+function KLDiv_flow(flow::F, x::AbstractMatrix{<:Real}, logd_orig::AbstractVector, cum_ladj::AbstractVector, logpdfs::Tuple{Function, Function}) where F<:AbstractFlow
+    KLDiv, back = Zygote.pullback(KLDiv_flow_loss, flow, x, logd_orig, cum_ladj, logpdfs)
     d_flow = back(one(eltype(x)))[1]
     return KLDiv, d_flow
 end
@@ -88,7 +113,7 @@ function optimize_flow(samples::Union{AbstractArray, Tuple{AbstractArray, Abstra
         flow, state, loss_hist = _train_flow(samples, initial_flow, optimizer, nepochs, nbatches, loss, pushfwd_logpdf, logd_orig, shuffle_samples)
     end
 
-    return (result = flow, optimizer_state = state, loss_hist = vcat(loss_history, loss_hist))
+    return (result = flow, optimizer_state = state, loss_hist = vcat(loss_history, loss_hist), training_metadata = Dict(:nepochs => nepochs, :nbatches => nbatches, :shuffle_samples => shuffle_samples, :sequential => sequential, :optimizer => optimizer, :loss => loss))
 end
 export optimize_flow
 
@@ -101,7 +126,9 @@ function _train_flow_sequentially(samples::Union{AbstractArray, Tuple{AbstractAr
                                   pushfwd_logpdf::Union{Function, 
                                   Tuple{Function, Function}}, 
                                   logd_orig::AbstractVector, 
-                                  shuffle_samples::Bool)
+                                  shuffle_samples::Bool;
+                                  cum_ladj::AbstractVector = zeros(length(logd_orig))
+                                )
     
     if !_is_trainable(initial_flow)
         return initial_flow, nothing, nothing
@@ -112,7 +139,6 @@ function _train_flow_sequentially(samples::Union{AbstractArray, Tuple{AbstractAr
         component_optstates = Vector{Any}()
         component_loss_hists = Vector{Any}()
         intermediate_samples = samples
-        logd_orig_intermediate = logd_orig
 
         for flow_component in initial_flow.flow.fs
             trained_flow_component, component_opt_state, component_loss_hist = _train_flow_sequentially(intermediate_samples, 
@@ -122,8 +148,10 @@ function _train_flow_sequentially(samples::Union{AbstractArray, Tuple{AbstractAr
                                                                                                         nbatches, 
                                                                                                         loss, 
                                                                                                         pushfwd_logpdf, 
-                                                                                                        logd_orig_intermediate, 
-                                                                                                        shuffle_samples)
+                                                                                                        logd_orig, 
+                                                                                                        shuffle_samples;
+                                                                                                        cum_ladj
+                                                                                                        )
             push!(trained_components, trained_flow_component)
             push!(component_optstates, component_opt_state)
             push!(component_loss_hists, component_loss_hist)
@@ -133,16 +161,16 @@ function _train_flow_sequentially(samples::Union{AbstractArray, Tuple{AbstractAr
                 intermediate_samples = (x_int, trained_flow_component(intermediate_samples[2]))
                 # fix AffineMaps to return row matrix ladj
                 ladj = ladj isa Real ? fill(ladj, length(logd_orig_intermediate)) : vec(ladj)
-                logd_orig_intermediate -= ladj
+                cum_ladj += ladj
             else
                 intermediate_samples, ladj = with_logabsdet_jacobian(trained_flow_component, intermediate_samples)
                 ladj = ladj isa Real ? fill(ladj, length(logd_orig_intermediate)) : vec(ladj)
-                logd_orig_intermediate -= ladj
+                cum_ladj += ladj
             end            
         end
         return typeof(initial_flow)(trained_components), component_optstates, component_loss_hists
     end
-    _train_flow(samples, initial_flow, optimizer, nepochs, nbatches, loss, pushfwd_logpdf, logd_orig, shuffle_samples)
+    _train_flow(samples, initial_flow, optimizer, nepochs, nbatches, loss, pushfwd_logpdf, logd_orig, shuffle_samples; cum_ladj)
 end
 
 
@@ -154,7 +182,9 @@ function _train_flow(samples::Union{AbstractArray, Tuple{AbstractArray, Abstract
                      loss::Function, 
                      pushfwd_logpdf::Union{Function, Tuple{Function, Function}}, 
                      logd_orig::AbstractVector,
-                     shuffle_samples::Bool)
+                     shuffle_samples::Bool;
+                     cum_ladj::AbstractVector = zeros(length(logd_orig))
+                    )
 
     if !_is_trainable(initial_flow)
         return initial_flow, nothing, nothing
@@ -163,13 +193,23 @@ function _train_flow(samples::Union{AbstractArray, Tuple{AbstractArray, Abstract
     batchsize = round(Int, n_samples / nbatches)
     batches = samples isa Tuple ? collect.(Iterators.partition.(samples, batchsize)) : collect(Iterators.partition(samples, batchsize))
     logd_orig_batches = collect(Iterators.partition(logd_orig, batchsize))
+    cum_ladj_batches = collect(Iterators.partition(cum_ladj, batchsize))
     flow = deepcopy(initial_flow)
     state = Optimisers.setup(optimizer, deepcopy(initial_flow))
     loss_hist = Vector{Float64}()
     for i in 1:nepochs
         for j in 1:nbatches
             training_samples = batches isa Tuple ? (Matrix(flatview(batches[1][j])), Matrix(flatview(batches[2][j]))) : Matrix(flatview(batches[j]))
-            loss_val, d_flow = loss(flow, training_samples, logd_orig_batches[j], pushfwd_logpdf)
+            loss_val, d_flow = loss(flow, training_samples, logd_orig_batches[j], cum_ladj_batches[j], pushfwd_logpdf)
+            if i == 1 && j == 1 && flow.mask[1]
+                global g_state_gradient_1 = (loss_val, d_flow)
+            end
+
+            if i == 1 && j == 2 && flow.mask[1]
+                global g_state_gradient_2 = (loss_val, d_flow)
+            end
+
+
             state, flow = Optimisers.update(state, flow, d_flow)
             push!(loss_hist, loss_val)
         end

@@ -215,7 +215,7 @@ function build_flow(target_samples::AbstractArray, modules::Vector = [InvMulAdd,
         stds = vec(std(flat_samples, dims = 2))
         means = vec(mean(flat_samples, dims = 2))
 
-        flow_modules[1] = modules[1] isa Function ? typeof(modules[1])(Diagonal(stds), means) : modules[1](Diagonal(stds), means)
+        flow_modules[1] = modules[1] isa Function ? typeof(modules[1])(Matrix(Diagonal(stds)), means) : modules[1](Matrix(Diagonal(stds)), means)
     end
 
     for (i, flow_module) in enumerate(modules[2:end])
