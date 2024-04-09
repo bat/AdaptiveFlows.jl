@@ -35,16 +35,10 @@ function KLDiv_flow_loss(flow::F, x::AbstractMatrix{<:Real}, logd_orig::Abstract
     
     KLDiv = sum(exp.(logd_orig - vec(ladj)) .* (logd_orig - vec(ladj) - logpdf_y(y))) / nsamples #(1) 
 
-    #KLDiv = sum(exp.(logpdf_y(y) + vec(ladj)) .* (logpdf_y(y) + vec(ladj) - logd_orig)) / nsamples #(MALA PAPER)             
-
-
-
+    # KLDiv = sum(exp.(logpdf_y(y) + vec(ladj)) .* (logpdf_y(y) + vec(ladj) - logd_orig)) / nsamples #(MALA PAPER)             
     # KLDiv = sum(exp.(logpdf_y(y) + vec(ladj)) .* (logpdf_y(y) + vec(ladj) - logd_orig)) / nsamples
-
     # KLDiv = sum(exp.(logd_orig) .* (logd_orig - vec(ladj) - logpdf_y(y))) / nsamples #(to tight) 
-
-
-    #KLDiv = sum(exp.(logd_orig - vec(ladj)) .* (logd_orig - vec(ladj) - logpdf_y(y))) / nsamples   #(1)
+    # KLDiv = sum(exp.(logd_orig - vec(ladj)) .* (logd_orig - vec(ladj) - logpdf_y(y))) / nsamples   #(1)
     # KLDiv = sum(exp.(logpdf_y(y) + vec(ladj)) .* (logpdf_y(y) + vec(ladj) - logd_orig)) / nsamples #(2)/ (3) with logpdfs[2] = target
     # KLDiv = sum(exp.(logpdf_y(y) + vec(ladj)) .* (vec(ladj) - logd_orig)) / nsamples 
     # KLDiv = sum(exp.(logpdf_y(y) + vec(ladj)) .* (logpdf_y(y) + vec(ladj) - logd_orig - logpdf_y(y))) / nsamples 
@@ -61,14 +55,15 @@ export KLDiv_flow
 
 function optimize_flow(samples::Union{Matrix, Tuple{Matrix, Matrix}}, 
     initial_flow::F where F<:AbstractFlow, 
-    optimizer;
+    optimizer = Adam(5f-3);
     sequential::Bool = true,
     loss::Function = negll_flow,
     logpdf::Union{Function, Tuple{Function, Function}} = std_normal_logpdf,
     nbatches::Integer = 10, 
     nepochs::Integer = 100,
     loss_history = Vector{Float64}(),
-    shuffle_samples::Bool = false
+    shuffle_samples::Bool = false,
+    lr_safety::Bool = true
     )
     optimize_flow(nestedview(samples), 
         initial_flow, 
@@ -79,20 +74,22 @@ function optimize_flow(samples::Union{Matrix, Tuple{Matrix, Matrix}},
         nbatches = nbatches, 
         nepochs = nepochs,
         loss_history = loss_history,
-        shuffle_samples = shuffle_samples
+        shuffle_samples = shuffle_samples,
+        lr_safety = lr_safety
         )
 end
 
 function optimize_flow(samples::Union{AbstractArray, Tuple{AbstractArray, AbstractArray}}, 
     initial_flow::F where F<:AbstractFlow, 
-    optimizer;
+    optimizer = Adam(5f-3);
     sequential::Bool = true,
     loss::Function = negll_flow_grad,
     logpdf::Union{Function, Tuple{Function, Function}},
     nbatches::Integer = 10, 
     nepochs::Integer = 100,
     loss_history = Vector{Float64}(),
-    shuffle_samples::Bool = false
+    shuffle_samples::Bool = false,
+    lr_safety::Bool = true
     )
     if !_is_trainable(initial_flow)
         return (result = initial_flow, optimizer_state = nothing, loss_history = nothing)
@@ -108,9 +105,9 @@ function optimize_flow(samples::Union{AbstractArray, Tuple{AbstractArray, Abstra
     end
 
     if sequential 
-        flow, state, loss_hist = _train_flow_sequentially(samples, initial_flow, optimizer, nepochs, nbatches, loss, pushfwd_logpdf, logd_orig, shuffle_samples)
+        flow, state, loss_hist = _train_flow_sequentially(samples, initial_flow, optimizer, nepochs, nbatches, loss, pushfwd_logpdf, logd_orig, shuffle_samples, lr_safety)
     else 
-        flow, state, loss_hist = _train_flow(samples, initial_flow, optimizer, nepochs, nbatches, loss, pushfwd_logpdf, logd_orig, shuffle_samples)
+        flow, state, loss_hist = _train_flow(samples, initial_flow, optimizer, nepochs, nbatches, loss, pushfwd_logpdf, logd_orig, shuffle_samples, lr_safety)
     end
 
     return (result = flow, optimizer_state = state, loss_hist = vcat(loss_history, loss_hist), training_metadata = Dict(:nepochs => nepochs, :nbatches => nbatches, :shuffle_samples => shuffle_samples, :sequential => sequential, :optimizer => optimizer, :loss => loss))
@@ -126,8 +123,9 @@ function _train_flow_sequentially(samples::Union{AbstractArray, Tuple{AbstractAr
                                   pushfwd_logpdf::Union{Function, 
                                   Tuple{Function, Function}}, 
                                   logd_orig::AbstractVector, 
-                                  shuffle_samples::Bool;
-                                  cum_ladj::AbstractVector = zeros(length(logd_orig))
+                                  shuffle_samples::Bool,
+                                  lr_safety::Bool;
+                                  cum_ladj::AbstractVector = zeros(length(logd_orig)),
                                 )
     
     if !_is_trainable(initial_flow)
@@ -149,7 +147,8 @@ function _train_flow_sequentially(samples::Union{AbstractArray, Tuple{AbstractAr
                                                                                                         loss, 
                                                                                                         pushfwd_logpdf, 
                                                                                                         logd_orig, 
-                                                                                                        shuffle_samples;
+                                                                                                        shuffle_samples,
+                                                                                                        lr_safety;
                                                                                                         cum_ladj
                                                                                                         )
             push!(trained_components, trained_flow_component)
@@ -159,20 +158,18 @@ function _train_flow_sequentially(samples::Union{AbstractArray, Tuple{AbstractAr
             if samples isa Tuple
                 x_int, ladj = with_logabsdet_jacobian(trained_flow_component, intermediate_samples[1])
                 intermediate_samples = (x_int, trained_flow_component(intermediate_samples[2]))
-                # fix AffineMaps to return row matrix ladj
                 ladj = ladj isa Real ? fill(ladj, length(logd_orig_intermediate)) : vec(ladj)
                 cum_ladj += ladj
             else
                 intermediate_samples, ladj = with_logabsdet_jacobian(trained_flow_component, intermediate_samples)
                 ladj = ladj isa Real ? fill(ladj, length(logd_orig_intermediate)) : vec(ladj)
                 cum_ladj += ladj
-            end            
+            end
         end
         return typeof(initial_flow)(trained_components), component_optstates, component_loss_hists
     end
-    _train_flow(samples, initial_flow, optimizer, nepochs, nbatches, loss, pushfwd_logpdf, logd_orig, shuffle_samples; cum_ladj)
+    _train_flow(samples, initial_flow, optimizer, nepochs, nbatches, loss, pushfwd_logpdf, logd_orig, shuffle_samples, lr_safety; cum_ladj)
 end
-
 
 function _train_flow(samples::Union{AbstractArray, Tuple{AbstractArray, AbstractArray}}, 
                      initial_flow::AbstractFlow, 
@@ -182,8 +179,9 @@ function _train_flow(samples::Union{AbstractArray, Tuple{AbstractArray, Abstract
                      loss::Function, 
                      pushfwd_logpdf::Union{Function, Tuple{Function, Function}}, 
                      logd_orig::AbstractVector,
-                     shuffle_samples::Bool;
-                     cum_ladj::AbstractVector = zeros(length(logd_orig))
+                     shuffle_samples::Bool,
+                     lr_safety::Bool;
+                     cum_ladj::AbstractVector = zeros(length(logd_orig)),
                     )
 
     if !_is_trainable(initial_flow)
@@ -195,23 +193,32 @@ function _train_flow(samples::Union{AbstractArray, Tuple{AbstractArray, Abstract
     logd_orig_batches = collect(Iterators.partition(logd_orig, batchsize))
     cum_ladj_batches = collect(Iterators.partition(cum_ladj, batchsize))
     flow = deepcopy(initial_flow)
+    flow_tmp = deepcopy(flow)
     state = Optimisers.setup(optimizer, deepcopy(initial_flow))
+    state_tmp = deepcopy(state)
     loss_hist = Vector{Float64}()
+
+    eta = optimizer.eta
+
     for i in 1:nepochs
         for j in 1:nbatches
             training_samples = batches isa Tuple ? (Matrix(flatview(batches[1][j])), Matrix(flatview(batches[2][j]))) : Matrix(flatview(batches[j]))
-            loss_val, d_flow = loss(flow, training_samples, logd_orig_batches[j], cum_ladj_batches[j], pushfwd_logpdf)
-            if i == 1 && j == 1 && flow.mask[1]
-                global g_state_gradient_1 = (loss_val, d_flow)
+            loss_cache, d_flow = loss(flow, training_samples, logd_orig_batches[j], cum_ladj_batches[j], pushfwd_logpdf)
+            
+            state_tmp, flow_tmp = Optimisers.update(state, flow, d_flow)
+            loss_val, d_flow_tmp = loss(flow_tmp, training_samples, logd_orig_batches[j], cum_ladj_batches[j], pushfwd_logpdf)
+            
+            while (lr_safety && i+j>2) && ((loss_val - loss_cache) / loss_cache > 0.3)
+                @info "Learning Rate too large, automatically reduced by 20%. Was: $(eta), Epoch: $(i), Batch: $(j)"
+                Optimisers.adjust!(state,  0.8 * eta)
+                eta *= 0.8
+                state_tmp, flow_tmp = Optimisers.update(state, flow, d_flow)
+                loss_val, d_flow_tmp = loss(flow_tmp, training_samples, logd_orig_batches[j], cum_ladj_batches[j], pushfwd_logpdf)
             end
-
-            if i == 1 && j == 2 && flow.mask[1]
-                global g_state_gradient_2 = (loss_val, d_flow)
-            end
-
 
             state, flow = Optimisers.update(state, flow, d_flow)
-            push!(loss_hist, loss_val)
+
+            push!(loss_hist, loss_cache)
         end
         if shuffle_samples
             batches = collect(Iterators.partition(shuffle(samples), batchsize))
