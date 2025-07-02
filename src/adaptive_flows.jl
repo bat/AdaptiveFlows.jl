@@ -41,7 +41,7 @@ function CompositeFlow(modules::Vector{F}) where F <: Function
 end    
 
 function CompositeFlow(n_dims::Integer, modules::Vector{F}) where F <: Function
-    build_flow(ndims, modules)
+    build_flow(n_dims, modules)
 end    
 
 
@@ -74,7 +74,7 @@ end
 (f::AbstractFlow)(vs::AbstractValueShape) = vs
 
 function InverseFunctions.inverse(f::CompositeFlow)
-    return CompositeFlow(InverseFunctions.inverse(f.flow).fs)
+    return CompositeFlow(InverseFunctions.inverse(f.flow)._fs)
 end
 
 """
@@ -84,7 +84,7 @@ Prepend the chain of flow modules in `f` with `new_module`. Meaning that `new_mo
 will be applied first in the resulting flow.
 """
 function prepend_flow_module(f::CompositeFlow, new_module::F) where F<:AbstractFlow
-    return CompositeFlow([new_module, f.flow.fs...])
+    return CompositeFlow([new_module, f.flow._fs...])
 end
 export prepend_flow_module
 
@@ -95,7 +95,7 @@ Append `new_module` to the the chain of flow modules in `f`. Meaning that `new_m
 will be applied last in the resulting flow.
 """
 function append_flow_module(f::CompositeFlow, new_module::F) where F<:AbstractFlow
-    return CompositeFlow([f.flow.fs..., new_module])
+    return CompositeFlow([f.flow._fs..., new_module])
 end
 export append_flow_module
 
@@ -245,7 +245,7 @@ function _is_trainable(flow)
     end
 
     if flow isa CompositeFlow
-        return any(_is_trainable.(flow.flow.fs))
+        return any(_is_trainable.(flow.flow._fs))
     end
 
     if typeof(flow) <: Function

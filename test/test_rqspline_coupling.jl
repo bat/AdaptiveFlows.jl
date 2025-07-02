@@ -83,14 +83,14 @@ end
 @testset "RQSplineCouplingModule" begin
     @test rqs_cm_test_direct.flow isa FunctionChains.FunctionChain{Vector{RQSplineCouplingBlock}}
     @test (rqs_cm_test_vector_block_target_els.flow isa FunctionChains.FunctionChain{Vector{RQSplineCouplingBlock}} && 
-       length(rqs_cm_test_vector_block_target_els.flow.fs) == 3 && 
-       rqs_cm_test_vector_block_target_els.flow.fs[1].nn == rqs_cb_test.nn &&
-       rqs_cm_test_vector_block_target_els.flow.fs[end].nn.layers[1].in_dims == n_dims - 2)
+       length(rqs_cm_test_vector_block_target_els.flow._fs) == 3 && 
+       rqs_cm_test_vector_block_target_els.flow._fs[1].nn == rqs_cb_test.nn &&
+       rqs_cm_test_vector_block_target_els.flow._fs[end].nn.layers[1].in_dims == n_dims - 2)
     @test (musketeer_flow.flow isa FunctionChains.FunctionChain{Vector{RQSplineCouplingBlock}} && 
-           length(musketeer_flow.flow.fs) == n_dims && 
-           musketeer_flow.flow.fs[1].nn == rqs_cb_test.nn)
+           length(musketeer_flow.flow._fs) == n_dims && 
+           musketeer_flow.flow._fs[1].nn == rqs_cb_test.nn)
     @test (rqs_cm_test_2.flow isa FunctionChains.FunctionChain{Vector{RQSplineCouplingBlock}} && 
-       length(rqs_cm_test_2.flow.fs) == ceil(n_dims / 2))
+       length(rqs_cm_test_2.flow._fs) == ceil(n_dims / 2))
     
     @test musketeer_flow_inv.flow isa FunctionChain{Vector{InverseRQSplineCouplingBlock}}
     

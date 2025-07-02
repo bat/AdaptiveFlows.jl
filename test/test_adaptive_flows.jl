@@ -30,6 +30,6 @@ comp_flow_test_appended = append_flow_module(comp_flow_test, FlowModule(InvMulAd
     @test all(isapprox.(ChangesOfVariables.with_logabsdet_jacobian(InverseFunctions.inverse(comp_flow_test), comp_flow_y_test), (x, .- comp_flow_ladj_test)))
     @test isapprox(InverseFunctions.inverse(comp_flow_test)(comp_flow_y_test), x)
     
-    @test comp_flow_test_prepended.flow.fs[1].flow isa AffineMaps.AbstractAffineMap
-    @test comp_flow_test_appended.flow.fs[end].flow isa AffineMaps.AbstractAffineMap
+    @test comp_flow_test_prepended.flow._fs[1].flow isa AffineMaps.AbstractAffineMap
+    @test comp_flow_test_appended.flow._fs[end].flow isa AffineMaps.AbstractAffineMap
 end

@@ -47,11 +47,12 @@ In this method, one may only input the number of dimensions `n_dims` of the targ
 quadratic coupling flow module that is constructed this way, consists of `n_dims` blocks of `RQSplineCouplingBlock`s, 
 each of which transforms one component of the input and uses 10 spline segments for its spline functions. 
 """
-function RQSplineCouplingModule(n_dims::Integer, 
-                                block_target_elements::Vector; 
-                                K::Union{Integer, Vector{Integer}} = 10,
-                                compute_unit::AbstractComputeUnit = CPUnit()
-    )
+function RQSplineCouplingModule(
+    n_dims::Integer,  
+    block_target_elements::Vector;  
+    K::Union{Integer, Vector{Integer}} = 10,   
+    compute_unit::AbstractComputeUnit = CPUnit()
+)
     @argcheck K isa Integer || length(K) == length(block_target_elements) throw(DomainError(K, "please specify the same number of values for K as there are blocks"))
 
     n_blocks = length(block_target_elements)
@@ -67,13 +68,12 @@ function RQSplineCouplingModule(n_dims::Integer,
     return RQSplineCouplingModule(fchain(blocks))
 end
 
-function RQSplineCouplingModule(n_dims::Integer, 
-                                block_target_elements::Integer = 1;
-                                K::Union{Integer, Vector{Integer}} = 10,
-                                compute_unit::AbstractComputeUnit = CPUnit()
-
-    )
-
+function RQSplineCouplingModule(
+    n_dims::Integer, 
+    block_target_elements::Integer = 1;
+    K::Union{Integer, Vector{Integer}} = 10,
+    compute_unit::AbstractComputeUnit = CPUnit()
+)
     n_blocks = ceil(Integer, n_dims / block_target_elements)
     vectorized_bte = [UnitRange(i + 1, i + block_target_elements) for i in 0:block_target_elements:((n_blocks - 2) * block_target_elements) ]
     push!(vectorized_bte, UnitRange((n_blocks - 1) * block_target_elements + 1, n_dims))
@@ -82,7 +82,7 @@ function RQSplineCouplingModule(n_dims::Integer,
 end
 
 function InverseFunctions.inverse(f::RQSplineCouplingModule)
-    return RQSplineCouplingModule(InverseFunctions.inverse(f.flow).fs)
+    return RQSplineCouplingModule(InverseFunctions.inverse(f.flow)._fs)
 end
 
 abstract type AbstractRQSplineCouplingBlock <: AbstractFlowBlock
@@ -111,7 +111,11 @@ export RQSplineCouplingBlock
 Construct and instance of `RQSplineCouplingBlock`, while initializing the parameters and the state of `nn` on the 
 compute device specified in `compute_unit`. (Defaults to CPU)
 """
-function RQSplineCouplingBlock(mask::Vector{Bool}, nn::Chain, compute_unit::AbstractComputeUnit=CPUnit())
+function RQSplineCouplingBlock(
+    mask::Vector{Bool}, 
+    nn::Chain, 
+    compute_unit::AbstractComputeUnit=CPUnit()
+)
     rng = Random.default_rng()
     Random.seed!(rng, 0)
 
@@ -150,7 +154,11 @@ export InverseRQSplineCouplingBlock
 Construct and instance of `InverseRQSplineCouplingBlock`, while initializing the parameters and the state of `nn` on the 
 compute device specified in `compute_unit`. (Defaults to CPU)
 """
-function InverseRQSplineCouplingBlock(mask::Vector{Bool}, nn::Chain, compute_unit::AbstractComputeUnit=CPUnit())
+function InverseRQSplineCouplingBlock(
+    mask::Vector{Bool}, 
+    nn::Chain, 
+    compute_unit::AbstractComputeUnit=CPUnit()
+)
     rng = Random.default_rng()
     Random.seed!(rng, 0)
 
@@ -187,21 +195,34 @@ end
 
 
 """
-    apply_rqs_coupling_flow(flow::Union{RQSplineCouplingBlock, InverseRQSplineCouplingBlock}, x::Any)
+    apply_rqs_coupling_flow(flow::Union{RQSplineCouplingBlock, InverseRQSplineCouplingBlock}, x::Any, B::Real)
 
 Apply the flow block `flow` to the input `x`, and compute the logarithm of the absolute value of the jacobian of this transformation. 
 Returns a tuple with the transformed output in the first component and a row matrix of the corresponding log values of the abs of 
 the jacobians in the second component.
 """
-function apply_rqs_coupling_flow(flow::Union{RQSplineCouplingBlock, InverseRQSplineCouplingBlock}, x::AbstractArray)
-
+function apply_rqs_coupling_flow(
+    flow::Union{RQSplineCouplingBlock, 
+    InverseRQSplineCouplingBlock}, 
+    x::AbstractArray, 
+    B::Real = 5.0
+)
     rq_spline = flow isa RQSplineCouplingBlock ? RQSpline : InvRQSpline
     n_dims_to_transform = sum(flow.mask)
 
     input_mask = .~flow.mask 
-    y, ladj = with_logabsdet_jacobian(rq_spline(get_params(flow.nn(x[input_mask,:], flow.nn_parameters, flow.nn_state)[1], n_dims_to_transform)...), x[flow.mask,:])   
+    y, ladj = with_logabsdet_jacobian(
+	rq_spline(
+	    MonotonicSplines.rqs_params_from_nn(
+		flow.nn(x[input_mask, :], flow.nn_parameters, flow.nn_state)[1], 
+		n_dims_to_transform, B
+		)...
+	    ), 
+	x[flow.mask, :]
+	)   
 
     return MonotonicSplines._sort_dimensions(y, x, flow.mask), ladj
 end
 
 export apply_rqs_coupling_flow
+
